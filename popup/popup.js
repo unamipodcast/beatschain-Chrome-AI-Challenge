@@ -207,12 +207,8 @@ class BeatsChainApp {
                 }
             } catch (error) {
                 console.error('Authentication manager initialization failed:', error);
-                // PRODUCTION: Auto-bypass for end users until Chrome Web Store approval
-                console.log('🔧 Production Mode: Auto-bypass active for end users');
-                // Production bypass for end users
-                console.log('🔧 OAuth2 pending Chrome Web Store approval - using bypass');
                 
-                // Initialize bypass authentication with unified system
+                // Initialize unified auth for bypass attempt
                 if (window.UnifiedAuthenticationManager) {
                     unifiedAuth = new UnifiedAuthenticationManager();
                 } else if (window.EnhancedAuthenticationManager) {
@@ -221,10 +217,24 @@ class BeatsChainApp {
                     unifiedAuth = new AuthenticationManager();
                 }
                 
+                // Try judge bypass if available
                 try {
+                    if (unifiedAuth.judgeBypassEnabled) {
+                        console.log('🏆 Chrome AI Challenge - Enabling judge bypass for testing');
+                        const judgeResult = await unifiedAuth.enableJudgeBypass();
+                        if (judgeResult.success) {
+                            console.log('✅ Judge bypass successful - full access granted');
+                            await this.updateAuthenticatedUI(judgeResult);
+                            this.hideAuthenticationRequired();
+                            this.showJudgeWelcomeMessage();
+                            return;
+                        }
+                    }
+                    
+                    // Fallback to regular bypass
                     const bypassResult = await unifiedAuth.bypassAuth();
                     if (bypassResult.success) {
-                        console.log('✅ Production bypass successful');
+                        console.log('✅ Standard bypass successful');
                         await this.updateAuthenticatedUI(bypassResult);
                         this.hideAuthenticationRequired();
                     } else {
@@ -1400,11 +1410,18 @@ Verification: Check Chrome extension storage for transaction details`;
             }
             
             if (!unifiedAuth || !isAuthenticated) {
-                // Try bypass authentication for development
+                // Try judge bypass or regular bypass for development
                 try {
-                    const bypassResult = await unifiedAuth.bypassAuth();
+                    let bypassResult;
+                    if (unifiedAuth.judgeBypassEnabled) {
+                        console.log('🏆 Attempting judge bypass for minting');
+                        bypassResult = await unifiedAuth.enableJudgeBypass();
+                    } else {
+                        bypassResult = await unifiedAuth.bypassAuth();
+                    }
+                    
                     if (bypassResult.success) {
-                        console.log('✅ Using development authentication bypass');
+                        console.log('✅ Using authentication bypass for minting');
                     } else {
                         throw new Error('Authentication required: Please sign in with Google to mint NFTs');
                     }
@@ -2315,18 +2332,25 @@ Verification: Check Chrome extension storage for transaction details`;
             }
         }
         
+        // Special message for judges
+        if (user.judgeMode) {
+            enhancedText = `<br><small style="color: #0f5132;">🏆 Chrome AI Challenge Judge Mode - Full Access</small>`;
+        }
+        
         const welcomeDiv = document.createElement('div');
         welcomeDiv.style.cssText = 'display: flex; align-items: center; gap: 8px;';
         
         const checkSpan = document.createElement('span');
-        checkSpan.textContent = '✅';
+        checkSpan.textContent = user.judgeMode ? '🏆' : '✅';
         
         const contentDiv = document.createElement('div');
         const strongEl = document.createElement('strong');
         strongEl.textContent = `Welcome, ${this.sanitizeInput(user.name)}!`;
         
         const smallEl = document.createElement('small');
-        smallEl.textContent = 'You can now mint NFTs and access all features';
+        smallEl.textContent = user.judgeMode ? 
+            'Judge testing mode - all features unlocked' : 
+            'You can now mint NFTs and access all features';
         
         contentDiv.appendChild(strongEl);
         contentDiv.appendChild(document.createElement('br'));
@@ -2344,12 +2368,53 @@ Verification: Check Chrome extension storage for transaction details`;
         
         document.body.appendChild(successDiv);
         
-        // Remove after 5 seconds (longer for enhanced info)
+        // Remove after 5 seconds (longer for enhanced info or judge mode)
         setTimeout(() => {
             if (successDiv.parentNode) {
                 successDiv.parentNode.removeChild(successDiv);
             }
-        }, enhancedInfo ? 6000 : 4000);
+        }, (enhancedInfo || user.judgeMode) ? 6000 : 4000);
+    }
+    
+    showJudgeWelcomeMessage() {
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 24px; border-radius: 12px;
+            z-index: 20000; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            text-align: center; max-width: 400px;
+        `;
+        
+        welcomeDiv.innerHTML = `
+            <div style="font-size: 48px; margin-bottom: 16px;">🏆</div>
+            <h2 style="margin: 0 0 12px 0; color: white;">Chrome AI Challenge</h2>
+            <h3 style="margin: 0 0 16px 0; color: rgba(255,255,255,0.9);">Judge Testing Mode Active</h3>
+            <p style="margin: 0 0 20px 0; line-height: 1.5; color: rgba(255,255,255,0.8);">
+                Welcome! You have full access to all BeatsChain features including:
+            </p>
+            <div style="text-align: left; margin: 16px 0; color: rgba(255,255,255,0.9);">
+                <div>• All 5 Chrome AI APIs integration</div>
+                <div>• Admin dashboard and analytics</div>
+                <div>• Complete NFT minting workflow</div>
+                <div>• Revenue optimization system</div>
+                <div>• Professional radio packages</div>
+            </div>
+            <button onclick="this.parentElement.remove()" style="
+                background: rgba(255,255,255,0.2); color: white; border: none;
+                padding: 10px 20px; border-radius: 6px; cursor: pointer;
+                font-weight: 500; margin-top: 8px;
+            ">Start Testing</button>
+        `;
+        
+        document.body.appendChild(welcomeDiv);
+        
+        // Auto-remove after 8 seconds
+        setTimeout(() => {
+            if (welcomeDiv.parentNode) {
+                welcomeDiv.remove();
+            }
+        }, 8000);
     }
     
     showSignInError(message) {
